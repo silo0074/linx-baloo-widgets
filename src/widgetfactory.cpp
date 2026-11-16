@@ -21,6 +21,7 @@
 #include <QLabel>
 #include <QLocale>
 #include <QMetaType>
+#include <QProcess>
 #include <QTime>
 #include <QUrl>
 
@@ -108,7 +109,8 @@ QWidget *WidgetFactory::createWidget(const QString &prop, const QVariant &value,
         widget = valueWidget;
     }
     if (QLabel *label = qobject_cast<QLabel *>(widget)) {
-        // Allow keyboard focus to go to the label for accessibility software like screen readers.
+        // Allow keyboard focus to go to the label for accessibility software like
+        // screen readers.
         label->setTextInteractionFlags(Qt::TextBrowserInteraction | Qt::TextSelectableByKeyboard);
     }
 
@@ -250,29 +252,74 @@ void WidgetFactory::slotRatingChanged(int rating)
 
 void WidgetFactory::slotTagsChanged(const QStringList &tags)
 {
-    if (m_tagWidget) {
-        for (const KFileItem &item : std::as_const(m_items)) {
-            QUrl url = item.targetUrl();
-            if (!url.isLocalFile()) {
-                continue;
-            }
-            KFileMetaData::UserMetaData md(url.toLocalFile());
-
-            // When multiple tags are selected one doesn't want to loose the old tags
-            // of any of the resources. Unless specifically removed.
-            QStringList newTags = md.tags() + tags;
-            newTags.removeDuplicates();
-
-            for (const QString &tag : std::as_const(m_prevTags)) {
-                if (!tags.contains(tag)) {
-                    newTags.removeAll(tag);
-                }
-            }
-            md.setTags(newTags);
-        }
-
-        m_prevTags = tags;
+    if (!m_tagWidget) {
+        return;
     }
+
+    QStringList filePaths;
+    for (const KFileItem &item : std::as_const(m_items)) {
+        QUrl url = item.targetUrl();
+        if (!url.isLocalFile()) {
+            continue;
+        }
+        KFileMetaData::UserMetaData md(url.toLocalFile());
+
+        // When multiple tags are selected one doesn't want to lose the old tags
+        // of any of the resources. Unless specifically removed.
+        QStringList newTags = md.tags() + tags;
+        newTags.removeDuplicates();
+
+        for (const QString &tag : std::as_const(m_prevTags)) {
+            if (!tags.contains(tag)) {
+                newTags.removeAll(tag);
+            }
+        }
+        md.setTags(newTags);
+
+        filePaths.append(url.toLocalFile());
+    }
+
+    m_prevTags = tags;
+
+    if (filePaths.isEmpty()) {
+        return;
+    }
+
+    // Modifying a tag changes the xattr which doesn't trigger Baloo automatically,
+    // so tags:/ doesn't reflect any change until Baloo reindexes.
+    // Run balooctl6 clear followed by index sequentially for ALL files at once.
+    auto *clearProcess = new QProcess(this);
+
+    QStringList clearArgs;
+    clearArgs << QStringLiteral("clear") << filePaths;
+
+    // Connect the finish signal for 'clear'
+    connect(clearProcess,
+            QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this,
+            [this, filePaths, clearProcess](int exitCode, QProcess::ExitStatus exitStatus) {
+                // Clean up the first process object immediately
+                clearProcess->deleteLater();
+
+                // Only proceed to index if 'clear' exited cleanly with code 0
+                if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+                    // Create the second managed process for 'index'
+                    auto *indexProcess = new QProcess(this);
+
+                    // Automatically delete the index process when it finishes
+                    connect(indexProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), indexProcess, &QProcess::deleteLater);
+
+                    QStringList indexArgs;
+                    indexArgs << QStringLiteral("index") << filePaths;
+
+                    // Start the index process under Qt's lifecycle management
+                    indexProcess->start(QStringLiteral("balooctl6"), indexArgs);
+                } else {
+                    qWarning() << "Baloo clear process failed or crashed with exit code:" << exitCode;
+                }
+            });
+
+    clearProcess->start(QStringLiteral("balooctl6"), clearArgs);
 }
 
 QString WidgetFactory::valuetoString(const QVariant &value, QLocale::FormatType dateFormat)
