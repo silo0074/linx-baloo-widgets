@@ -37,8 +37,8 @@ public:
     explicit FileMetaDataWidgetPrivate(FileMetaDataWidget *parent);
     ~FileMetaDataWidgetPrivate();
 
-    FileMetaDataWidgetPrivate(const FileMetaDataWidgetPrivate&) = delete;
-    FileMetaDataWidget& operator=(const FileMetaDataWidgetPrivate&) = delete;
+    FileMetaDataWidgetPrivate(const FileMetaDataWidgetPrivate &) = delete;
+    FileMetaDataWidget &operator=(const FileMetaDataWidgetPrivate &) = delete;
 
     void deleteRows();
 
@@ -71,6 +71,8 @@ FileMetaDataWidgetPrivate::FileMetaDataWidgetPrivate(FileMetaDataWidget *parent)
 
     m_widgetFactory = new WidgetFactory(q);
     QObject::connect(m_widgetFactory, &WidgetFactory::urlActivated, q, &FileMetaDataWidget::urlActivated);
+
+    QObject::connect(m_widgetFactory, &WidgetFactory::tagsModified, q, &FileMetaDataWidget::tagsModified);
 
     // TODO: If KFileMetaDataProvider might get a public class in future KDE releases,
     // the following code should be moved into KFileMetaDataWidget::setModel():

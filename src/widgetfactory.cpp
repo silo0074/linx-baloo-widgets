@@ -306,8 +306,21 @@ void WidgetFactory::slotTagsChanged(const QStringList &tags)
                     // Create the second managed process for 'index'
                     auto *indexProcess = new QProcess(this);
 
-                    // Automatically delete the index process when it finishes
-                    connect(indexProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), indexProcess, &QProcess::deleteLater);
+                    // Chain the finish event to handle cleanup and emit tagsModified()
+                    connect(indexProcess,
+                            QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                            this,
+                            [this, indexProcess](int indexExitCode, QProcess::ExitStatus indexExitStatus) {
+                                indexProcess->deleteLater();
+
+                                if (indexExitStatus == QProcess::NormalExit && indexExitCode == 0) {
+                                    // Successfully cleared and re-indexed.
+                                    // Now it's safe to notify Dolphin to refresh the view.
+                                    Q_EMIT tagsModified();
+                                } else {
+                                    qWarning() << "Baloo index process failed with exit code:" << indexExitCode;
+                                }
+                            });
 
                     QStringList indexArgs;
                     indexArgs << QStringLiteral("index") << filePaths;

@@ -92,6 +92,11 @@ Q_SIGNALS:
     void urlActivated(const QUrl &url);
 
     /**
+     * Is emitted after tags have been modified via the widget factory.
+     */
+    void tagsModified();
+
+    /**
      * Is emitted after the meta data has been received for the items
      * set by KFileMetaDataWidget::setItems().
      * @since 4.6

@@ -40,6 +40,7 @@ public:
 
 Q_SIGNALS:
     void urlActivated(const QUrl &url);
+    void tagsModified();
 
 private Q_SLOTS:
     void slotTagsChanged(const QStringList &tags);
